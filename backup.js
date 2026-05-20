@@ -30,6 +30,10 @@ async function initGit() {
   }
   try { await execCommand('git rm --cached config.js 2>/dev/null'); } catch(e){}
   try { await execCommand('git remote get-url origin'); } catch(e) { await execCommand(`git remote add origin ${GIT_REMOTE_URL}`); }
+  try {
+    const currentUrl = (await execCommand('git remote get-url origin')).trim();
+    if (currentUrl !== GIT_REMOTE_URL) await execCommand(`git remote set-url origin ${GIT_REMOTE_URL}`);
+  } catch(e){}
   try { await execCommand(`git rev-parse --verify ${GIT_BRANCH}`); } catch(e) { await execCommand(`git checkout -b ${GIT_BRANCH}`); }
 }
 
@@ -54,18 +58,25 @@ export async function backupNow(onProgress) {
       await execCommand(`git push origin ${GIT_BRANCH}`);
     } catch (pushError) {
       const msg = pushError.stderr || '';
-      if (msg.includes('has no upstream branch')) await execCommand(`git push -u origin ${GIT_BRANCH}`);
-      else if (msg.includes('fetch first') || msg.includes('rejected')) {
-        progress('🔄 Sinkronisasi...');
-        await execCommand(`git fetch origin ${GIT_BRANCH}`);
-        await execCommand(`git pull origin ${GIT_BRANCH} --allow-unrelated-histories --no-edit`);
-        await execCommand(`git push origin ${GIT_BRANCH}`);
+      if (msg.includes('has no upstream branch')) {
+        await execCommand(`git push -u origin ${GIT_BRANCH}`);
+      } else if (msg.includes('fetch first') || msg.includes('rejected') || msg.includes('divergent') || msg.includes('Need to specify')) {
+        // Jika terjadi divergensi / perlu fetch dulu, lakukan force push karena backup satu arah
+        progress('🔄 Sinkronisasi paksa...');
+        await execCommand(`git push -f origin ${GIT_BRANCH}`);
       } else if (msg.includes('push protection') || msg.includes('GH013')) {
+        // Hapus file sensitif yang mungkin lolos
         await execCommand('git rm --cached config.js 2>/dev/null');
         await execCommand('git add -A');
         await execCommand(`git commit --amend -m "🤖 Backup - ${timestamp} (clean)"`);
         await execCommand(`git push -f origin ${GIT_BRANCH}`);
-      } else throw pushError;
+      } else if (msg.includes('Author identity unknown')) {
+        await configureGitIdentity();
+        await execCommand(`git commit --amend --reset-author --no-edit`);
+        await execCommand(`git push origin ${GIT_BRANCH}`);
+      } else {
+        throw pushError;
+      }
     }
 
     progress('✅ Backup berhasil!');
