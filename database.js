@@ -4,9 +4,46 @@ import {
   MT_FILE, PREMIUM_FILE, USER_DB, HISTORY_DB,
   BANNED_GROUP_DB, SETTINGS_DB, ALLOWED_FILE, ADMIN_FILE,
   OWNER_ID, GMAIL_DB, DEFAULT_FIX_LIMIT, FIX_LIMIT_RESET_HOURS,
-  FIX_API_KEY, FIX_API_ENDPOINT, GMAIL_USER, GMAIL_APP_PASSWORD
+  FIX_API_KEY, FIX_API_ENDPOINT, GMAIL_USER, GMAIL_APP_PASSWORD,
+  DEFAULT_BANDING_LIMIT,    // ✅ tambahkan ini
+  BANDING_LIMIT_RESET_HOURS // ✅ tambahkan ini
 } from './config.js';
 
+// ========== BANDING LIMIT (24h reset) ==========
+export function getUserBandingLimit(userId) {
+  const user = getUser(userId);
+  const now = Date.now();
+  const reset = BANDING_LIMIT_RESET_HOURS * 60 * 60 * 1000;
+  if (user.last_banding_reset && (now - user.last_banding_reset) >= reset) {
+    user.banding_limit = DEFAULT_BANDING_LIMIT;
+    user.last_banding_reset = now;
+    user.banding_count = 0;
+    saveUser(user);
+  }
+  return user;
+}
+
+export function decreaseUserBandingLimit(userId) {
+  const user = getUserBandingLimit(userId);
+  if (user.banding_limit <= 0) return false;
+  user.banding_limit--;
+  user.banding_count++;
+  saveUser(user);
+  return true;
+}
+
+export function setUserBandingLimit(userId, newLimit) {
+  const user = getUser(userId);
+  user.banding_limit = newLimit;
+  user.last_banding_reset = Date.now();
+  saveUser(user);
+}
+
+export function getAllUserBandingLimits() {
+  return Object.values(readDb(USER_DB))
+    .filter(u => u.id !== OWNER_ID)
+    .sort((a, b) => a.banding_limit - b.banding_limit);
+}
 export function initDbFile(filePath, defaultData) {
   if (!fs.existsSync(filePath)) {
     const dir = path.dirname(filePath);
@@ -43,13 +80,25 @@ export function saveAdmin() { fs.writeFileSync(ADMIN_FILE, JSON.stringify(adminI
 
 export function getUser(userId) {
   const users = readDb(USER_DB);
-  const def = {
-    id: userId, username: 'N/A', status: isOwner(userId) ? 'owner' : 'free',
-    is_banned: 0, last_fix: 0, fix_limit: DEFAULT_FIX_LIMIT,
-    last_fix_reset: Date.now(), fix_count: 0, referral_points: 0, referred_by: null, referred_users: []
+  const defaultUser = {
+    id: userId,
+    username: 'N/A',
+    status: isOwner(userId) ? 'owner' : 'free',
+    is_banned: 0,
+    last_fix: 0,
+    fix_limit: DEFAULT_FIX_LIMIT,
+    last_fix_reset: Date.now(),
+    fix_count: 0,
+    banding_limit: DEFAULT_BANDING_LIMIT,       // ✅ tambahkan ini
+    last_banding_reset: Date.now(),             // ✅ tambahkan ini
+    banding_count: 0,                           // ✅ tambahkan ini
+    referral_points: 0,
+    referred_by: null,
+    referred_users: []
   };
-  return users[userId] ? { ...def, ...users[userId] } : def;
+  return users[userId] ? { ...defaultUser, ...users[userId] } : defaultUser;
 }
+
 export function saveUser(user) { const users = readDb(USER_DB); users[user.id] = user; writeDb(USER_DB, users); }
 export function saveHistory(data) {
   const history = readDb(HISTORY_DB);

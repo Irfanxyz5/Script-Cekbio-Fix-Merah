@@ -196,4 +196,36 @@ export default function registerOwnerCommands(bot) {
       }
     });
   });
+    
+    // ========== LIMIT BANDING ==========
+bot.onText(/\/addbandinglimit/, async (msg) => {
+  const chatId = msg.chat.id;
+  if (!isOwner(msg.from.id)) return bot.sendMessage(chatId, '❌ Hanya owner.');
+  const args = msg.text.replace('/addbandinglimit','').trim().split(/\s+/);
+  if (args.length < 2) return bot.sendMessage(chatId, '❌ Format: /addbandinglimit <id_user> <jumlah>');
+  const targetId = parseInt(args[0]), add = parseInt(args[1]);
+  if (isNaN(targetId) || isNaN(add)) return bot.sendMessage(chatId, '❌ ID/jumlah tidak valid.');
+  const user = getUserBandingLimit(targetId);
+  setUserBandingLimit(targetId, user.banding_limit + add);
+  bot.sendMessage(chatId, `✅ Limit banding user ${targetId} ditambah ${add}. Total: ${user.banding_limit + add}x`);
+});
+
+bot.onText(/\/delbandinglimit/, async (msg) => {
+  const chatId = msg.chat.id;
+  if (!isOwner(msg.from.id)) return bot.sendMessage(chatId, '❌ Hanya owner.');
+  const targetId = parseInt(msg.text.replace('/delbandinglimit','').trim());
+  if (isNaN(targetId)) return bot.sendMessage(chatId, '❌ Format: /delbandinglimit <id_user>');
+  setUserBandingLimit(targetId, 0);
+  bot.sendMessage(chatId, `✅ Limit banding user ${targetId} dihapus.`);
+});
+
+bot.onText(/\/listbandinglimit/, async (msg) => {
+  const chatId = msg.chat.id;
+  if (!isOwner(msg.from.id)) return bot.sendMessage(chatId, '❌ Hanya owner.');
+  const all = getAllUserBandingLimits();
+  if (!all.length) return bot.sendMessage(chatId, '📋 Kosong.');
+  let txt = '<b>Limit Banding User (terendah)</b>\n\n';
+  all.forEach((u, i) => txt += `${i+1}. ID: ${u.id} | Limit: ${u.banding_limit}x\n`);
+  bot.sendMessage(chatId, txt, { parse_mode: 'HTML' });
+});
 }

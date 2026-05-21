@@ -5,6 +5,7 @@ import { MAX_RECONNECT_ATTEMPTS, OWNER_ID } from './config.js';
 
 let whatsappSock = null, isWhatsAppConnected = false, reconnectAttempts = 0, qrCodeString = '', reconnectTimeout = null;
 let lastQrLogTime = 0, lastDisconnectLogTime = 0;
+let lastConnectedNotifyTime = 0; // ✅ cooldown notifikasi
 
 export function getWhatsAppSock() { return whatsappSock; }
 export function isConnected() { return isWhatsAppConnected; }
@@ -55,7 +56,6 @@ export async function startWhatsApp(bot) {
         const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
         if (Date.now() - lastDisconnectLogTime > 30000) console.log("❌ Koneksi WhatsApp terputus");
         lastDisconnectLogTime = Date.now();
-
         if (shouldReconnect) {
           qrCodeString = ''; isWhatsAppConnected = false;
           const delay = getReconnectDelay(reconnectAttempts + 1);
@@ -69,25 +69,26 @@ export async function startWhatsApp(bot) {
           setTimeout(() => startWhatsApp(bot), 3000);
         }
       } else if (connection === "open") {
-  isWhatsAppConnected = true; reconnectAttempts = 0; qrCodeString = '';
-  console.log(`✅ WhatsApp terhubung sebagai ${whatsappSock.user.id}`);
-  try {
-    // ✅ Ganti ke HTML
-    await bot.sendMessage(OWNER_ID, 
-      `<b>✅ WhatsApp Berhasil Terhubung!</b>\n\n` +
-      `<b>User ID:</b> ${whatsappSock.user.id}\n` +
-      `<b>Nama:</b> ${whatsappSock.user.name || 'Tidak ada nama'}\n` +
-      `<b>Status:</b> Connected`,
-      { parse_mode: 'HTML' }
-    );
-  } catch(e){}
-          }
+        isWhatsAppConnected = true; reconnectAttempts = 0; qrCodeString = '';
+        console.log(`✅ WhatsApp terhubung sebagai ${whatsappSock.user.id}`);
+
+        // Kirim notifikasi ke owner hanya jika terakhir dikirim > 1 jam yang lalu
+        const now = Date.now();
+        const oneHour = 3600 * 1000;
+        if (now - lastConnectedNotifyTime > oneHour) {
+          lastConnectedNotifyTime = now;
+          try {
+            await bot.sendMessage(OWNER_ID,
+              `<b>✅ WhatsApp Berhasil Terhubung!</b>\n\n<b>User ID:</b> ${whatsappSock.user.id}\n<b>Nama:</b> ${whatsappSock.user.name || 'Tidak ada nama'}\n<b>Status:</b> Connected`,
+              { parse_mode: 'HTML' }
+            );
+          } catch(e){}
+        }
+      }
     });
 
     whatsappSock.ev.on("creds.update", saveCreds);
-    whatsappSock.ev.on('messages.upsert', async (m) => {
-      if (m.type === 'notify') for (const msg of m.messages) {/* silent */}
-    });
+    whatsappSock.ev.on('messages.upsert', async (m) => { if (m.type === 'notify') for (const msg of m.messages) {/* silent */} });
 
   } catch (error) {
     console.error('❌ Error WhatsApp:', error.message);
